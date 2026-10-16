@@ -116,10 +116,9 @@ var CONFIG = {
         PLAYER_LEVEL: 1,                // the level the player starts as
         ITEMS: [1, 2, 3, 4],            // the other pieces on the field, by level
         MAX_LEVEL: 5,                   // reaching this with the field empty wins
-        // One tint per level, LV 1 first. A tint alone is not enough to tell
-        // levels apart, so each piece also carries an "LV n" label.
-        TINTS: ['#ffffff', '#5ec8ff', '#7dff6a', '#ffc23d', '#ff5fd2'],
-        SCALE: 0.32,                    // piece art scale (art is 111 x 256)
+        // Each level has its own art (graphics/player/item_0N.webp), and each
+        // piece also carries an "LV n" label.
+        SCALE: 0.15,                    // piece art scale (art is about 230 x 505)
         GROW: 0.06,                     // extra scale per level above 1
         PULSE: 1.12,                    // the player's breathing: peak scale, x its own
         PULSE_MS: 450,                  // half a breath (grow, then shrink back), ms
@@ -130,6 +129,10 @@ var CONFIG = {
         POINTER_GAP: 12,                // its clearance above the head (at full pulse), px
         POINTER_COLOR: '#ffe066',
         HIT_RADIUS: 28,                 // contact radius at the feet, px
+        LOSE_BLINK_MS: 1500,            // on a loss, the player blinks red this long
+                                        // before the game-over pane, ms
+        LOSE_BLINKS: 6,                 // how many red flashes in that time
+        LOSE_BLINK_COLOR: '#ff2a2a',
         SPEED: 400,                     // travel speed, px/s
         STOP_AT_TAP: false,             // true: stop at the tapped point instead
                                         // of sliding on to the wall

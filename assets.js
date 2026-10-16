@@ -35,6 +35,11 @@ function assetList() {
 // background with AssetManager.ensureImage instead of being listed here.
 function sharedAssets() {
     const A = assetList();
-    A.image('unit', 'graphics/player.webp');   // every merge level; tinted per level
+    // One piece art per merge level, LV 1 first. Only levels up to MAX_LEVEL
+    // are loaded; any art beyond that (item_06) stays in the folder unused.
+    const max = (CONFIG.MERGE && CONFIG.MERGE.MAX_LEVEL) || 5;
+    for (let lv = 1; lv <= max; lv++) {
+        A.image(`piece${lv}`, `graphics/player/item_${String(lv).padStart(2, '0')}.webp`);
+    }
     return A.list();
 }

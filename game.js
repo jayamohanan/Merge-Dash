@@ -487,8 +487,8 @@ class GameScene extends Phaser.Scene {
     _makePiece(x, y, level) {
         const M = CONFIG.MERGE;
         const shadow = this.add.graphics();
-        shadow.fillStyle(0x000000, 0.35).fillEllipse(0, 0, 200 * M.SCALE, 62 * M.SCALE);
-        const img = this.add.image(0, 0, 'unit').setOrigin(0.5, 1);
+        shadow.fillStyle(0x000000, 0.35).fillEllipse(0, 0, 420 * M.SCALE, 130 * M.SCALE);
+        const img = this.add.image(0, 0, `piece${level}`).setOrigin(0.5, 1);
         const label = this.add.text(0, M.LABEL_GAP, '', {
             fontSize: M.LABEL_SIZE, fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
             color: '#ffffff', stroke: '#000000', strokeThickness: 6,
@@ -503,7 +503,7 @@ class GameScene extends Phaser.Scene {
         const M = CONFIG.MERGE;
         c.level = level;
         c.img.setScale(M.SCALE * (1 + M.GROW * (level - 1)));
-        c.img.setTint(hexColor(M.TINTS[(level - 1) % M.TINTS.length]));
+        c.img.setTexture(`piece${level}`);
         c.label.setText(`LV ${level}`);
     }
 
@@ -526,7 +526,7 @@ class GameScene extends Phaser.Scene {
     _onTap(p) {
         if (this.isWatchingAd || this.gamePaused) return;
         if (this.over) {
-            if (this.time.now - this.over.at > 500) this._buildLevel();
+            if (this.over.ready && this.time.now - this.over.at > 500) this._buildLevel();
             return;
         }
         if (!this.player || this.spawning) return;   // a tap mid-run simply re-aims it from where it is
@@ -683,16 +683,32 @@ class GameScene extends Phaser.Scene {
         return this.obstacles.find((o) => Math.hypot(o.x - pl.x, o.y - pl.y) < M.HIT_RADIUS + M.OBSTACLE_RADIUS);
     }
 
+    // A LOSS BLINKS RED FIRST, so you see what killed you before the pane
+    // covers it. Taps are ignored until the pane is up (over.ready).
     _lose(it, why) {
-        const pl = this.player;
-        this.over = { at: this.time.now, won: false };
-        this.tweens.add({ targets: pl, scale: 0, alpha: 0, angle: 180, duration: 350, ease: 'Back.easeIn' });
+        const M = CONFIG.MERGE, pl = this.player;
+        this.over = { at: this.time.now, won: false, ready: false };
+        this.tweens.killTweensOf(pl.img);   // stop the breathing and hopping
         this.tweens.add({ targets: it, scale: 1.15, duration: 120, yoyo: true });
-        this._setMessage({ title: 'GAME OVER', sub: `${why || `LV ${pl.level} hit LV ${it.level}`} — tap to retry`, color: '#ff5a5a' });
+        const red = hexColor(M.LOSE_BLINK_COLOR || '#ff2a2a'), n = M.LOSE_BLINKS || 6;
+        this.tweens.add({
+            targets: { t: 0 }, t: 1, duration: M.LOSE_BLINK_MS || 1500,
+            onUpdate: (tw, o) => {
+                if (Math.floor(o.t * n * 2) % 2 === 0) pl.img.setTintFill(red);
+                else pl.img.clearTint();
+            },
+            onComplete: () => {
+                pl.img.clearTint();
+                this.tweens.add({ targets: pl, scale: 0, alpha: 0, angle: 180, duration: 350, ease: 'Back.easeIn' });
+                this.over.at = this.time.now;
+                this.over.ready = true;
+                this._setMessage({ title: 'GAME OVER', sub: `${why || `LV ${pl.level} hit LV ${it.level}`} — tap to retry`, color: '#ff5a5a' });
+            },
+        });
     }
 
     _win() {
-        this.over = { at: this.time.now, won: true };
+        this.over = { at: this.time.now, won: true, ready: true };
         this._setMessage({ title: `LV ${this.player.level}!`, sub: 'All merged — tap to play again', color: '#ffe066' });
     }
 
