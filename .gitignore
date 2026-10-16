@@ -1,0 +1,13 @@
+# macOS Finder writes one of these into every folder it opens, holding that
+# folder's view settings. They serve nothing outside Finder, they keep entries
+# for files that have since been deleted, and they come back whenever a folder
+# is browsed — so they are ignored rather than deleted once.
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows equivalents, in case the project is ever opened there.
+Thumbs.db
+desktop.ini
+build/

@@ -1,0 +1,223 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<!-- Opt out of forced dark mode (Samsung Internet, Chrome Android's auto
+	     dark). Without this they darken the game's art, not just the page. -->
+	<meta name="color-scheme" content="only light">
+	<link rel="icon" type="image/png" href="favicon.png">
+
+	<title>Merge Dash</title>
+	<style>
+		/* Self-hosted so the build has no runtime dependency on a font CDN.
+		   `block` rather than `swap`: Phaser draws text into a canvas texture
+		   once and never re-renders it, so a fallback shown for even a moment
+		   gets BAKED IN and only a page refresh clears it. Waiting is correct
+		   here in a way it would not be for ordinary HTML. */
+		@font-face {
+			font-family: 'Baloo 2';
+			src: url('fonts/Baloo2-600.woff2') format('woff2');
+			font-weight: 600;
+			font-style: normal;
+			font-display: block;
+		}
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		} 
+		:root {
+			color-scheme: only light;
+		}
+		html, body {
+			width: 100%;
+			height: 100%;
+			overflow: hidden;
+			/* NO BROWSER GESTURES ON THE PAGE. Phaser stops them on the canvas,
+			   but not on the bars around it — and a swipe down there was the
+			   browser's pull-to-refresh, which reloads the page and loses the
+			   run. */
+			overscroll-behavior: none;
+			touch-action: none;
+			/* Behind and around the canvas. Matched to CONFIG.BACKGROUND_COLOR so
+			   the letterboxing on odd aspect ratios reads as more of the game
+			   rather than as the page showing through. */
+			background: #20232b;
+		}
+		#game-container {
+			width: 100%;
+			height: 100%;
+		}
+		canvas {
+			display: block;
+		}
+
+		/* ── Loading screen ──────────────────────────────────────────────────
+		   Plain HTML over the canvas rather than a Phaser scene, so it is on
+		   screen from the first paint: it covers phaser.min.js downloading and
+		   the font wait too, not only the asset loader. The script below fills
+		   the bar until the game can, and game.js fades it out when the opening
+		   view is built. No art — all CSS. */
+		#loading-screen {
+			position: fixed;
+			inset: 0;
+			z-index: 1000;
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			justify-content: center;
+			gap: 22px;
+			padding: 0 16px;
+			/* The page's colour, lit a little in the middle so the bar sits in a
+			   soft pool of light rather than on a flat colour. */
+			background: radial-gradient(ellipse at 50% 45%, #2e333e 0%, #20232b 55%, #15171d 100%);
+			transition: opacity 0.45s ease;
+		}
+		#loading-screen.done {
+			opacity: 0;
+			pointer-events: none;
+		}
+		.loading-title {
+			font-family: 'Baloo 2', sans-serif;
+			font-weight: 600;
+			font-size: clamp(34px, 7vw, 56px);
+			line-height: 1;
+			color: #f2f4f8;
+			letter-spacing: 0.5px;
+			text-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+		}
+		.loading-track {
+			position: relative;
+			width: min(360px, 78vw);
+			height: 26px;
+			padding: 4px;
+			border-radius: 999px;
+			/* A dark channel with an inner shadow along its top edge, inside a
+			   light rim. */
+			background: #0f1116;
+			box-shadow:
+				0 0 0 3px #3a404d,
+				0 6px 14px rgba(0, 0, 0, 0.35),
+				inset 0 3px 5px rgba(0, 0, 0, 0.35);
+		}
+		.loading-fill {
+			position: relative;
+			width: 0%;
+			height: 100%;
+			min-width: 18px;          /* stays a pill, never a sliver */
+			border-radius: 999px;
+			overflow: hidden;
+			background: linear-gradient(180deg, #7fdcff 0%, #35a8e6 55%, #1f7fc4 100%);
+			box-shadow: 0 0 10px rgba(127, 220, 255, 0.55);
+			transition: width 0.25s ease-out;
+		}
+		/* Moving diagonal ripples, so the bar reads as alive even while a big
+		   file holds the number still. */
+		.loading-fill::before {
+			content: '';
+			position: absolute;
+			inset: 0 -40px 0 0;
+			background: repeating-linear-gradient(
+				-45deg,
+				rgba(255, 255, 255, 0.22) 0 10px,
+				rgba(255, 255, 255, 0) 10px 20px
+			);
+			animation: loading-flow 0.9s linear infinite;
+		}
+		/* Gloss along the top half. */
+		.loading-fill::after {
+			content: '';
+			position: absolute;
+			left: 6px;
+			right: 6px;
+			top: 2px;
+			height: 38%;
+			border-radius: 999px;
+			background: rgba(255, 255, 255, 0.45);
+		}
+		@keyframes loading-flow {
+			from { transform: translateX(-28.28px); }   /* one stripe period along x */
+			to   { transform: translateX(0); }
+		}
+		.loading-percent {
+			font-family: 'Baloo 2', sans-serif;
+			font-weight: 600;
+			font-size: 18px;
+			color: #c9ced8;
+			opacity: 0.85;
+			font-variant-numeric: tabular-nums;
+		}
+		@media (prefers-reduced-motion: reduce) {
+			.loading-fill::before { animation: none; }
+			.loading-fill { transition: none; }
+		}
+	</style>
+</head>
+<body>
+	<div id="game-container"></div>
+	<div id="loading-screen" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+		<div class="loading-title">Merge Dash</div>
+		<div class="loading-track"><div class="loading-fill" id="loading-fill"></div></div>
+		<div class="loading-percent" id="loading-percent">0%</div>
+	</div>
+	<!-- THE BAR, FROM THE FIRST PAINT. It has to start moving before any of the
+	     game's own code exists: the longest part of the wait is the scripts
+	     below downloading, and the loader that reports real progress cannot run
+	     until they have. So the page drives the bar itself — an eased creep that
+	     slows as it goes and never passes its ceiling — and game.js takes over
+	     the moment it has real figures (window.__loading.takeOver).
+
+	     ONE OWNER OF THE BAR: everything that moves it goes through this object,
+	     so the creep and the real progress can never fight over the same pixels.
+	     It only ever moves forward. -->
+	<script>
+	(function () {
+		var fill  = document.getElementById('loading-fill');
+		var label = document.getElementById('loading-percent');
+		var box   = document.getElementById('loading-screen');
+		var shown = 0, raf = 0, creeping = true;
+		var CEIL = 0.6;      // the creep's limit: a bar resting here still looks
+		                     // like it has work left, where one resting at 95%
+		                     // looks stuck
+		var TAU  = 2.6;      // seconds; the creep covers ~63% of the gap to CEIL
+		                     // in one of these, so it eases rather than marches
+		var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+		function paint(v) {
+			if (v <= shown) return;            // never backwards
+			shown = v > 1 ? 1 : v;
+			var pct = Math.round(shown * 100);
+			if (fill)  fill.style.width = pct + '%';
+			if (label) label.textContent = pct + '%';
+			if (box)   box.setAttribute('aria-valuenow', pct);
+		}
+		function tick() {
+			var now = (window.performance && performance.now) ? performance.now() : Date.now();
+			paint(CEIL * (1 - Math.exp(-((now - t0) / 1000) / TAU)));
+			if (creeping) raf = window.requestAnimationFrame(tick);
+		}
+		window.__loading = {
+			value: function () { return shown; },
+			set: paint,
+			// REAL FIGURES FROM HERE ON. Called once the game's loader is running;
+			// whatever the creep reached is the floor the real progress starts
+			// from, so the hand-over is a jump forward or nothing at all.
+			takeOver: function () {
+				creeping = false;
+				if (raf) window.cancelAnimationFrame(raf);
+				raf = 0;
+			},
+		};
+		if (window.requestAnimationFrame) tick(); else creeping = false;
+	})();
+	</script>
+	<!-- Poki SDK. After the loading screen rather than in the head, so a slow
+	     fetch of it cannot hold back the screen's first paint. Blocked by an ad
+	     blocker, PokiSDK is simply undefined and game.js carries on without it. -->
+	<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js"></script>
+	<script src="phaser.min.js"></script>
+	<script src="config.js"></script>
+	<script src="assets.js"></script>
+	<script type="module" src="game.js"></script>
+</html>
