@@ -1,6 +1,6 @@
 # Merge Dash
 
-A landscape casual game for web portals (Poki). Phaser 3 (custom build), plain JS, no bundler.
+A casual game (landscape and portrait) for web portals (Poki). Phaser 3 (custom build), plain JS, no bundler.
 
 The loading bar, Poki wrapper, adaptive stage, save skeleton and build pipeline are in place; the game itself is still to be written.
 
@@ -32,7 +32,7 @@ The scripts share globals. The custom Phaser build has no `this.add.circle` / sh
 
 ## The shell (game.js)
 
-- **Stage:** landscape only. Width fixed at `STAGE.W` (1920); height from the window's aspect, clamped (`MIN_RATIO`/`MAX_RATIO`). Phaser `FIT` scales it.
+- **Stage:** landscape or portrait (`STAGE.PORTRAIT`). Long side fixed at `STAGE.W` (1920); short side from the window's aspect, clamped (`MIN_RATIO`/`MAX_RATIO`). Phaser `FIT` scales it. In portrait the arena is `WORLD_H` x `WORLD_W` (`this.world`); a turn mid-level calls `_rotateField`.
 - **Layout:** `calculateLayout()` fills `this.layoutConfig` (`W`, `H`, `cx`, `cy`). `layout()` builds the view; `_teardown()` destroys it. On a big reshape (`RESHAPE_TOLERANCE`), `_pollStage` → `_relayout` waits for `_unsettledBy()` to return null, then tears down and rebuilds in place. Anything placed vertically must read `H` from `layoutConfig`.
 - **Loading:** `preload` drives the HTML bar; `create` ends with `finishLoadingScreen()` (sends `gameLoadingFinished`).
 - **Poki:** all calls via `pokiCall`. `gameplayStart` only after the first input (`pokiFirstInput`). Rewarded ads: `showRewardedAd(onReward, onFail)` pauses (`_setPaused`) and stops gameplay around the ad.

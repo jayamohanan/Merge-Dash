@@ -57,16 +57,19 @@ class GameScene extends Phaser.Scene {
     // shape, so anything placed against the bottom or the vertical centre must
     // read H from here, never a constant.
     calculateLayout() {
+        const M = CONFIG.MERGE;
         const W = this.scale.width;
         const H = this.scale.height;
-        this.layoutConfig = { W, H, cx: W / 2, cy: H / 2 };
+        const portrait = H > W;
+        this.layoutConfig = { W, H, cx: W / 2, cy: H / 2, portrait };
+        // THE ARENA STANDS ON END in portrait: the same field, turned.
+        this.world = portrait ? { W: M.WORLD_H, H: M.WORLD_W } : { W: M.WORLD_W, H: M.WORLD_H };
     }
 
     // BUILDS THE VIEW against layoutConfig. Called once from create and again
     // after every relayout, with the old view already torn down (_teardown).
     layout() {
-        const M = CONFIG.MERGE;
-        this.cameras.main.centerOn(M.WORLD_W / 2, M.WORLD_H / 2);   // re-centre after a reshape
+        this.cameras.main.centerOn(this.world.W / 2, this.world.H / 2);   // re-centre after a reshape
         this._buildHud();
     }
 
@@ -90,7 +93,8 @@ class GameScene extends Phaser.Scene {
         const now = performance.now();
         const want = pickStage();
         const tol = S.RESHAPE_TOLERANCE !== undefined ? S.RESHAPE_TOLERANCE : 0.05;
-        const reshape = tol >= 0 && Math.abs(want.height - this.scale.height) / this.scale.height > tol;
+        const off = (a, b) => Math.abs(a - b) / b > tol;
+        const reshape = tol >= 0 && (off(want.height, this.scale.height) || off(want.width, this.scale.width));
         if (!reshape) {
             // Matches — including changed back before a relayout ran.
             this._reshapeSeenAt = 0;
@@ -114,10 +118,10 @@ class GameScene extends Phaser.Scene {
 
     // What is holding the field unsettled, or null. A relayout tears the view
     // down, so it waits for anything in flight to land. Looping tweens never
-    // end and are simply rebuilt by layout(), so they do not count.
+    // end and are simply rebuilt by layout(), so they do not count. A run in
+    // progress does not either: _rotateField turns it with the field.
     _unsettledBy() {
         if (this.isWatchingAd) return 'an ad is playing';
-        if (this.move) return 'the player is moving';
         const t = this.tweens.getTweens().filter((tw) => !tw.isInfinite).length;
         return t ? `${t} tween(s) running` : null;
     }
@@ -135,10 +139,20 @@ class GameScene extends Phaser.Scene {
         this._waitWhy = undefined;
         const st = pickStage();
         stageLog(`relayout: frame ${window.innerWidth} x ${window.innerHeight} -> stage ${st.width} x ${st.height}`);
+        const wasPortrait = this.layoutConfig.portrait;
         this.scale.setGameSize(st.width, st.height);
         this.cameras.main.setSize(st.width, st.height);
         this._teardown();
         this.calculateLayout();
+        // TURNED: the field turns the opposite way to the device, so everything
+        // stays where it was in the room. The screen's angle says which way it
+        // went; without one (a desktop window dragged tall) it turns clockwise.
+        const ang = screenAngle();
+        if (this.layoutConfig.portrait !== wasPortrait && this.player) {
+            const d = ang !== null && this._angle !== null ? ((ang - this._angle) % 360 + 360) % 360 : 90;
+            this._rotateField(d !== 270);
+        }
+        this._angle = ang;
         this.layout();
         // Reshaped again while this ran? _pollStage picks it up next frame.
         this._reshapeSeenAt = 0;
@@ -255,6 +269,7 @@ class GameScene extends Phaser.Scene {
         if (this._save) this._applySave(this._save);
 
         this.calculateLayout();
+        this._angle = screenAngle();
         this._buildLevel();
         this.layout();
         this._startAutosave();
@@ -394,11 +409,10 @@ class GameScene extends Phaser.Scene {
     _buildLevel() {
         const M = CONFIG.MERGE;
         this._clearLevel();
-        const wall = M.WALL;
-        this.arena = { x0: wall, y0: wall + M.WALL_FACE, x1: M.WORLD_W - wall, y1: M.WORLD_H - wall };
+        this._makeArena();
         this._drawFloor();
 
-        const spots = this._pickSpots(1 + M.ITEMS.length);
+        const spots = this.spots = this._pickSpots(1 + M.ITEMS.length);
         this.player = this._makePiece(spots[0].x, spots[0].y, M.PLAYER_LEVEL || 1);
         this.items = M.ITEMS.map((lv, i) => this._makePiece(spots[i + 1].x, spots[i + 1].y, lv));
         this.obstacles = this._obstacleSpots(spots, M.ITEMS).map((p) => this._makeObstacle(p.x, p.y));
@@ -406,7 +420,8 @@ class GameScene extends Phaser.Scene {
         // Until then taps and spikes are off.
         this.spawning = true;
         for (const o of [...this.items, ...this.obstacles]) o.setVisible(false);
-        this._spawnTimer = this.time.delayedCall(M.SPAWN_DELAY_MS || 0, () => this._revealField(spots));
+        // this.spots, not spots: a turn before the reveal rotates them.
+        this._spawnTimer = this.time.delayedCall(M.SPAWN_DELAY_MS || 0, () => this._revealField(this.spots));
         // THE POINTER: a down-arrow over the player, so you know which one is you.
         const ps = M.POINTER_SIZE || 30;
         this.player.pointer = this.add.graphics()
@@ -418,8 +433,42 @@ class GameScene extends Phaser.Scene {
         this.over = null;
 
         const cam = this.cameras.main;
-        cam.centerOn(M.WORLD_W / 2, M.WORLD_H / 2);   // the whole arena on screen, no follow
+        cam.centerOn(this.world.W / 2, this.world.H / 2);   // the whole arena on screen, no follow
         this._setMessage(null);
+    }
+
+    _makeArena() {
+        const M = CONFIG.MERGE, wall = M.WALL;
+        this.arena = { x0: wall, y0: wall + M.WALL_FACE, x1: this.world.W - wall, y1: this.world.H - wall };
+    }
+
+    // A QUARTER TURN of everything on the field, cw (clockwise on screen) or
+    // not. Positions are mapped arena to arena, so nothing lands in a wall —
+    // the two arenas are near enough each other turned that spacing barely
+    // changes. The art itself stays upright: only where it stands turns. A run
+    // in progress keeps going the same way across the field.
+    _rotateField(cw) {
+        const old = this.arena;
+        this._makeArena();
+        const a = this.arena;
+        const map = (p) => {
+            const u = (p.x - old.x0) / (old.x1 - old.x0), v = (p.y - old.y0) / (old.y1 - old.y0);
+            const nu = cw ? 1 - v : v, nv = cw ? u : 1 - u;
+            return { x: a.x0 + nu * (a.x1 - a.x0), y: a.y0 + nv * (a.y1 - a.y0) };
+        };
+        for (const o of [this.player, ...this.items, ...this.obstacles]) {
+            if (o.sweep) { o.sweep.a = map(o.sweep.a); o.sweep.b = map(o.sweep.b); }
+            const p = map(o);
+            o.setPosition(p.x, p.y).setDepth(p.y);
+        }
+        if (this.spots) this.spots = this.spots.map(map);
+        if (this.move) {
+            const mv = this.move, ux = mv.ux;
+            if (cw) { mv.ux = -mv.uy; mv.uy = ux; } else { mv.ux = mv.uy; mv.uy = -ux; }
+            if (mv.toWall) mv.left = this._toWall(this.player.x, this.player.y, mv.ux, mv.uy);
+        }
+        this.floor.destroy();
+        this._drawFloor();
     }
 
     _revealField(spots) {
@@ -445,6 +494,7 @@ class GameScene extends Phaser.Scene {
         for (const o of [this.floor, this.player, ...(this.items || []), ...(this.obstacles || [])]) {
             if (!o) continue;
             this.tweens.killTweensOf(o);
+            if (o.sweep) this.tweens.killTweensOf(o.sweep);
             o.destroy();
         }
         this.floor = this.player = null;
@@ -459,7 +509,7 @@ class GameScene extends Phaser.Scene {
         const M = CONFIG.MERGE, a = this.arena;
         const g = this.floor = this.add.graphics().setDepth(-1e6);
         // Wall well past the arena, so a taller screen shows more wall, not a gap.
-        g.fillStyle(hexColor(M.WALL_COLOR), 1).fillRect(-2000, -2000, M.WORLD_W + 4000, M.WORLD_H + 4000);
+        g.fillStyle(hexColor(M.WALL_COLOR), 1).fillRect(-2000, -2000, this.world.W + 4000, this.world.H + 4000);
         const c0 = hexColor(M.FLOOR_COLORS[0]), c1 = hexColor(M.FLOOR_COLORS[1]), T = M.TILE;
         for (let y = a.y0, r = 0; y < a.y1; y += T, r++) {
             for (let x = a.x0, c = 0; x < a.x1; x += T, c++) {
@@ -530,19 +580,24 @@ class GameScene extends Phaser.Scene {
             return;
         }
         if (!this.player || this.spawning) return;   // a tap mid-run simply re-aims it from where it is
-        const M = CONFIG.MERGE, a = this.arena, r = M.HIT_RADIUS;
+        const M = CONFIG.MERGE;
         const px = this.player.x, py = this.player.y;
         const dx = p.worldX - px, dy = p.worldY - py, len = Math.hypot(dx, dy);
         if (len < 5) return;
         const ux = dx / len, uy = dy / len;
-        // Distance along the line to the wall, feet kept HIT_RADIUS off it.
-        const tx = ux > 0 ? (a.x1 - r - px) / ux : ux < 0 ? (a.x0 + r - px) / ux : Infinity;
-        const ty = uy > 0 ? (a.y1 - r - py) / uy : uy < 0 ? (a.y0 + r - py) / uy : Infinity;
-        let left = Math.max(0, Math.min(tx, ty)), toWall = true;
+        let left = this._toWall(px, py, ux, uy), toWall = true;
         if (M.STOP_AT_TAP && len < left) { left = len; toWall = false; }
         this.move = { ux, uy, left, toWall };
         this._idleFor = 0;
         this._tapRing(p.worldX, p.worldY);
+    }
+
+    // Distance along the line to the wall, feet kept HIT_RADIUS off it.
+    _toWall(px, py, ux, uy) {
+        const a = this.arena, r = CONFIG.MERGE.HIT_RADIUS;
+        const tx = ux > 0 ? (a.x1 - r - px) / ux : ux < 0 ? (a.x0 + r - px) / ux : Infinity;
+        const ty = uy > 0 ? (a.y1 - r - py) / uy : uy < 0 ? (a.y0 + r - py) / uy : Infinity;
+        return Math.max(0, Math.min(tx, ty));
     }
 
     _tapRing(x, y) {
@@ -656,10 +711,17 @@ class GameScene extends Phaser.Scene {
             k = null;
         }
         if (!k) return false;
-        o[k] = from;
-        this.tweens.add({ targets: o, [k]: to, duration: M.OBSTACLE_SWEEP_MS, yoyo: true, repeat: -1,
+        // BETWEEN TWO POINTS, a to b, rather than along one axis: a turn of the
+        // field (_rotateField) just moves the points and the sweep runs on.
+        const sw = o.sweep = { a: { x: o.x, y: o.y }, b: { x: o.x, y: o.y }, t: 0 };
+        sw.a[k] = from; sw.b[k] = to;
+        o.setPosition(sw.a.x, sw.a.y).setDepth(sw.a.y);
+        this.tweens.add({ targets: sw, t: 1, duration: M.OBSTACLE_SWEEP_MS, yoyo: true, repeat: -1,
             ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, M.OBSTACLE_SWEEP_MS),
-            onUpdate: () => o.setDepth(o.y) });
+            onUpdate: () => {
+                o.setPosition(sw.a.x + (sw.b.x - sw.a.x) * sw.t, sw.a.y + (sw.b.y - sw.a.y) * sw.t);
+                o.setDepth(o.y);
+            } });
         return true;
     }
 
@@ -771,17 +833,31 @@ function stageLog(msg) {
 // That does not restart anything: the scene takes the new size and re-lays
 // itself out in place (see _relayout). A smaller resize is just the browser
 // scaling this stage.
+//
+// PORTRAIT is the same rule turned: the long side is W, the short side from
+// the window's shape, within the same clamps.
 function pickStage() {
     const S = (typeof CONFIG !== 'undefined' && CONFIG.STAGE) || {};
     const W = S.W || 1920;
     const winW = window.innerWidth  || 1280;
     const winH = window.innerHeight || 720;
-    let height = S.H || 1080;
+    const portrait = S.PORTRAIT !== false && winH > winW;
+    let short = S.H || 1080;
     if (S.DERIVE_HEIGHT !== false) {
-        const ratio = Math.min(Math.max(winH / winW, S.MIN_RATIO || 0.3), S.MAX_RATIO || 3);
-        height = Math.round(W * ratio);
+        const shape = portrait ? winW / winH : winH / winW;
+        const ratio = Math.min(Math.max(shape, S.MIN_RATIO || 0.3), S.MAX_RATIO || 3);
+        short = Math.round(W * ratio);
     }
-    return { width: W, height };
+    return portrait ? { width: short, height: W } : { width: W, height: short };
+}
+
+// HOW FAR THE SCREEN IS TURNED from its natural way up, degrees, counter-
+// clockwise; null where the browser does not say (most desktops).
+function screenAngle() {
+    try {
+        if (screen.orientation && typeof screen.orientation.angle === 'number') return screen.orientation.angle;
+    } catch (e) { /* not available */ }
+    return typeof window.orientation === 'number' ? (window.orientation + 360) % 360 : null;
 }
 const STAGE = pickStage();
 stageLog(`boot: frame ${window.innerWidth} x ${window.innerHeight} -> stage ${STAGE.width} x ${STAGE.height}`);

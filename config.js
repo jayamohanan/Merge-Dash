@@ -28,9 +28,13 @@ var CONFIG = {
                              // back, and the stage it picks
 
     // ── The stage ─────────────────────────────────────────────────────────────
-    // LANDSCAPE ONLY.
+    // LANDSCAPE OR PORTRAIT, whichever way the window is. The long side is
+    // fixed at W, the short side follows the window's shape; in portrait the
+    // arena stands on end (WORLD_H x WORLD_W) and a turn mid-level rotates the
+    // field rather than restarting it (see _rotateField in game.js).
     STAGE: {
-        // ONLY THE WIDTH IS FIXED. Height is taken from the window's own aspect,
+        PORTRAIT: true,      // false: landscape only, a tall window gets bars
+        // ONLY THE LONG SIDE IS FIXED. The other is taken from the window's own aspect,
         // so the stage matches the screen and there are no bars to begin with —
         // a fixed 16:9 stage letterboxes on nearly every real screen.
         //
