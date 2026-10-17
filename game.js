@@ -582,6 +582,11 @@ class GameScene extends Phaser.Scene {
         if (!this.player || this.spawning) return;   // a tap mid-run simply re-aims it from where it is
         const M = CONFIG.MERGE;
         const px = this.player.x, py = this.player.y;
+        // A TAP ON THE PLAYER ITSELF does nothing. Tapping the piece you mean
+        // to steer gives a direction you did not choose — a few px off its feet
+        // either way — so a circle round the body's middle ignores taps.
+        const bodyY = py - this.player.img.displayHeight / 2;
+        if (Math.hypot(p.worldX - px, p.worldY - bodyY) < (M.TAP_DEAD_RADIUS || 0)) return;
         const dx = p.worldX - px, dy = p.worldY - py, len = Math.hypot(dx, dy);
         if (len < 5) return;
         const ux = dx / len, uy = dy / len;

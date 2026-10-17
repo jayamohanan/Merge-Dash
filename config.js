@@ -137,6 +137,9 @@ var CONFIG = {
                                         // before the game-over pane, ms
         LOSE_BLINKS: 6,                 // how many red flashes in that time
         LOSE_BLINK_COLOR: '#ff2a2a',
+        TAP_DEAD_RADIUS: 70,            // taps this close to the player's middle are
+                                        // ignored, so tapping the player itself does
+                                        // not send it off in a random direction, px
         SPEED: 400,                     // travel speed, px/s
         STOP_AT_TAP: false,             // true: stop at the tapped point instead
                                         // of sliding on to the wall
