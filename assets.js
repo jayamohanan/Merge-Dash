@@ -35,9 +35,11 @@ function assetList() {
 // background with AssetManager.ensureImage instead of being listed here.
 function sharedAssets() {
     const A = assetList();
-    // One piece art per merge level, LV 1 first. Only levels up to MAX_LEVEL
-    // are loaded; any art beyond that (item_06) stays in the folder unused.
-    const max = (CONFIG.MERGE && CONFIG.MERGE.MAX_LEVEL) || 5;
+    // The piece art, item_01 to item_<PIECE_ART>. Levels past the last one
+    // start over from item_01 (pieceKey in game.js); the "LV n" label tells
+    // them apart. Never more than MAX_LEVEL needs.
+    const M = CONFIG.MERGE || {};
+    const max = Math.min(M.MAX_LEVEL || 5, M.PIECE_ART || 6);
     for (let lv = 1; lv <= max; lv++) {
         A.image(`piece${lv}`, `graphics/player/item_${String(lv).padStart(2, '0')}.webp`);
     }

@@ -118,9 +118,11 @@ var CONFIG = {
         WALL_FACE_COLOR: '#272c38',
 
         PLAYER_LEVEL: 1,                // the level the player starts as
-        ITEMS: [1, 2, 3, 4],            // the other pieces on the field, by level
-        MAX_LEVEL: 5,                   // reaching this with the field empty wins
-        // Each level has its own art (graphics/player/item_0N.webp), and each
+        ITEMS: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],   // the other pieces on the field, by level
+        MAX_LEVEL: 15,                  // reaching this with the field empty wins
+        PIECE_ART: 6,                   // how many item_0N.webp pictures there are;
+                                        // levels past that reuse them from item_01
+        // Each level shows art from graphics/player/item_0N.webp, and each
         // piece also carries an "LV n" label.
         SCALE: 0.15,                    // piece art scale (art is about 230 x 505)
         GROW: 0.06,                     // extra scale per level above 1
@@ -143,6 +145,8 @@ var CONFIG = {
         SPEED: 400,                     // travel speed, px/s
         STOP_AT_TAP: false,             // true: stop at the tapped point instead
                                         // of sliding on to the wall
+        OBSTACLES_ON: false,            // false hides the spike balls (none placed);
+                                        // the settings below are kept for turning them back on
         OBSTACLES: 9,                   // spike balls on the field; touching one kills
         OBSTACLE_RADIUS: 32,            // their contact radius, px
         // ON THE ROUTE: this share of them sits along the merge route (player
@@ -155,6 +159,12 @@ var CONFIG = {
         OBSTACLE_MOVERS: 3,             // how many of them sweep to and fro
         OBSTACLE_SWEEP: 130,            // a sweep's reach each side of home, px
         OBSTACLE_SWEEP_MS: 1300,        // one way across, ms
+        // THE NPCS WANDER, so the player has to chase them.
+        NPC_SPEED: 140,                 // their walking speed, px/s (the player's is SPEED)
+        NPC_TURN_MIN_MS: 1200,          // a new random heading every this long ...
+        NPC_TURN_MAX_MS: 2800,          // ... to this long, ms
+        NPC_WALL_GAP: 60,               // how close their feet come to a wall, px
+        NPC_GAP: 160,                   // two NPCs closer than this turn away from each other, px
         SPAWN_DELAY_MS: 1000,           // the player stands alone this long before
                                         // the NPCs and spikes pop in, ms — so it is
                                         // plain which piece is yours

@@ -415,7 +415,9 @@ class GameScene extends Phaser.Scene {
         const spots = this.spots = this._pickSpots(1 + M.ITEMS.length);
         this.player = this._makePiece(spots[0].x, spots[0].y, M.PLAYER_LEVEL || 1);
         this.items = M.ITEMS.map((lv, i) => this._makePiece(spots[i + 1].x, spots[i + 1].y, lv));
-        this.obstacles = this._obstacleSpots(spots, M.ITEMS).map((p) => this._makeObstacle(p.x, p.y));
+        // HIDDEN, not removed: OBSTACLES_ON false places none.
+        this.obstacles = M.OBSTACLES_ON === false ? []
+            : this._obstacleSpots(spots, M.ITEMS).map((p) => this._makeObstacle(p.x, p.y));
         // THE PLAYER FIRST, alone; the rest pop in after SPAWN_DELAY_MS.
         // Until then taps and spikes are off.
         this.spawning = true;
@@ -458,6 +460,7 @@ class GameScene extends Phaser.Scene {
         };
         for (const o of [this.player, ...this.items, ...this.obstacles]) {
             if (o.sweep) { o.sweep.a = map(o.sweep.a); o.sweep.b = map(o.sweep.b); }
+            if (o.vel) { const vx = o.vel.x; o.vel.x = cw ? -o.vel.y : o.vel.y; o.vel.y = cw ? vx : -vx; }
             const p = map(o);
             o.setPosition(p.x, p.y).setDepth(p.y);
         }
@@ -538,7 +541,7 @@ class GameScene extends Phaser.Scene {
         const M = CONFIG.MERGE;
         const shadow = this.add.graphics();
         shadow.fillStyle(0x000000, 0.35).fillEllipse(0, 0, 420 * M.SCALE, 130 * M.SCALE);
-        const img = this.add.image(0, 0, `piece${level}`).setOrigin(0.5, 1);
+        const img = this.add.image(0, 0, pieceKey(level)).setOrigin(0.5, 1);
         const label = this.add.text(0, M.LABEL_GAP, '', {
             fontSize: M.LABEL_SIZE, fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
             color: '#ffffff', stroke: '#000000', strokeThickness: 6,
@@ -553,7 +556,7 @@ class GameScene extends Phaser.Scene {
         const M = CONFIG.MERGE;
         c.level = level;
         c.img.setScale(M.SCALE * (1 + M.GROW * (level - 1)));
-        c.img.setTexture(`piece${level}`);
+        c.img.setTexture(pieceKey(level));
         c.label.setText(`LV ${level}`);
     }
 
@@ -743,6 +746,35 @@ class GameScene extends Phaser.Scene {
             ease: 'Quad.easeOut', yoyo: true, onComplete: () => { img.y = 0; img.hopping = false; } });
     }
 
+    // THE NPCS WANDER, so the player has to chase them: a straight line at
+    // NPC_SPEED, a new heading now and then, bouncing off the walls and
+    // turning away from each other so two never stack up.
+    _stepNpcs(delta) {
+        const M = CONFIG.MERGE, a = this.arena, r = M.NPC_WALL_GAP || 60;
+        const s = (M.NPC_SPEED || 140) * delta / 1000;
+        for (const it of this.items) {
+            it.turnIn = (it.turnIn || 0) - delta;
+            if (!it.vel || it.turnIn <= 0) this._npcTurn(it);
+            for (const o of this.items) {
+                if (o === it) continue;
+                const dx = it.x - o.x, dy = it.y - o.y, d = Math.hypot(dx, dy);
+                if (d > 0 && d < (M.NPC_GAP || 160)) { it.vel.x = dx / d; it.vel.y = dy / d; }
+            }
+            it.x += it.vel.x * s; it.y += it.vel.y * s;
+            if (it.x < a.x0 + r) { it.x = a.x0 + r; it.vel.x = Math.abs(it.vel.x); }
+            if (it.x > a.x1 - r) { it.x = a.x1 - r; it.vel.x = -Math.abs(it.vel.x); }
+            if (it.y < a.y0 + r) { it.y = a.y0 + r; it.vel.y = Math.abs(it.vel.y); }
+            if (it.y > a.y1 - r) { it.y = a.y1 - r; it.vel.y = -Math.abs(it.vel.y); }
+            it.setDepth(it.y);
+        }
+    }
+
+    _npcTurn(it) {
+        const M = CONFIG.MERGE, ang = Math.random() * Math.PI * 2;
+        it.vel = { x: Math.cos(ang), y: Math.sin(ang) };
+        it.turnIn = Phaser.Math.Between(M.NPC_TURN_MIN_MS || 1200, M.NPC_TURN_MAX_MS || 2800);
+    }
+
     // A spike touching the player — checked every frame, since a sweeping one
     // can run into a player standing still.
     _spikeAt(pl) {
@@ -814,10 +846,15 @@ class GameScene extends Phaser.Scene {
         } else {
             this._fastForward(false);   // reshaped back before it ran
         }
+        if (this.player && !this.over && !this.spawning) this._stepNpcs(delta);
         if (this.move) this._stepMove(delta);
         else if (this.player && !this.over) {
-            const spike = !this.spawning && this._spikeAt(this.player);
+            const M = CONFIG.MERGE, pl = this.player;
+            const spike = !this.spawning && this._spikeAt(pl);
+            // AN NPC WALKING INTO A PLAYER standing still counts as contact too.
+            const npc = !this.spawning && this.items.find((it) => Math.hypot(it.x - pl.x, it.y - pl.y) < M.HIT_RADIUS * 2);
             if (spike) this._lose(spike, 'Hit a spike');
+            else if (npc) this._contact(npc);
             else this._idleHop(delta);
         }
     }
@@ -854,6 +891,12 @@ function pickStage() {
         short = Math.round(W * ratio);
     }
     return portrait ? { width: short, height: W } : { width: W, height: short };
+}
+
+// A LEVEL'S ART: there are fewer pictures than levels, so they repeat in turn.
+function pieceKey(level) {
+    const n = CONFIG.MERGE.PIECE_ART || 6;
+    return `piece${(level - 1) % n + 1}`;
 }
 
 // HOW FAR THE SCREEN IS TURNED from its natural way up, degrees, counter-
